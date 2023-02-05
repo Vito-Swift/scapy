@@ -23,4 +23,3 @@ source > TransformDrain(sniff_handler) > console_sink
 p = PipeEngine(source)
 p.start()
 p.wait_and_stop()
-
