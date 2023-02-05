@@ -50,7 +50,7 @@ from scapy.fields import (
     StrFixedLenField,
     StrLenField,
     XByteField,
-    XStrFixedLenField,
+    XStrFixedLenField
 )
 from scapy.ansmachine import AnsweringMachine
 from scapy.plist import PacketList
@@ -58,14 +58,15 @@ from scapy.layers.l2 import Ether, LLC, MACField
 from scapy.layers.inet import IP, TCP
 from scapy.error import warning, log_loading
 from scapy.sendrecv import sniff, sendp
-
+import math
 
 if conf.crypto_valid:
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms
 else:
     default_backend = Ciphers = algorithms = None
-    log_loading.info("Can't import python-cryptography v1.7+. Disabled WEP decryption/encryption. (Dot11)")  # noqa: E501
+    log_loading.info(
+        "Can't import python-cryptography v1.7+. Disabled WEP decryption/encryption. (Dot11)")  # noqa: E501
 
 
 #########
@@ -127,6 +128,7 @@ class PrismHeader(Packet):
             return self.payload.answers(other.payload)
         else:
             return self.payload.answers(other)
+
 
 ############
 # RadioTap #
@@ -307,7 +309,8 @@ class RadioTap(Packet):
         LEShortField('len', None),
         FlagsField('present', None, -32, _rt_present),  # noqa: E501
         # Extended presence mask
-        ConditionalField(PacketListField("Ext", [], next_cls_cb=_next_radiotap_extpm), lambda pkt: pkt.present and pkt.present.Ext),  # noqa: E501
+        ConditionalField(PacketListField("Ext", [], next_cls_cb=_next_radiotap_extpm),
+                         lambda pkt: pkt.present and pkt.present.Ext),  # noqa: E501
         # RadioTap fields - each starts with a ReversePadField
         # to handle padding
 
@@ -644,7 +647,6 @@ _dot11_cfe = {
     10: "SSW-Ack",
 }
 
-
 _dot11_addr_meaning = [
     [  # Management: 802.11-2016 9.3.3.2
         "RA=DA", "TA=SA", "BSSID/STA", None,
@@ -687,15 +689,19 @@ class _Dot11MacField(MACField):
 class Dot11(Packet):
     name = "802.11"
     fields_desc = [
+        # Type, Subtype, Version fields (8 bits)
         BitMultiEnumField("subtype", 0, 4, _dot11_subtypes,
                           lambda pkt: pkt.type),
         BitEnumField("type", 0, 2, ["Management", "Control", "Data",
                                     "Extension"]),
         BitField("proto", 0, 2),
+
         ConditionalField(
             BitEnumField("cfe", 0, 4, _dot11_cfe),
             lambda pkt: (pkt.type, pkt.subtype) == (1, 6)
         ),
+
+        # Flags field (8 bits)
         MultipleTypeField(
             [
                 (
@@ -713,7 +719,8 @@ class Dot11(Packet):
         ConditionalField(
             _Dot11MacField("addr2", ETHER_ANY, 2),
             lambda pkt: (pkt.type != 1 or
-                         pkt.subtype in [0x8, 0x9, 0xa, 0xb, 0xe, 0xf]),
+                         pkt.subtype in [0x8, 0x9, 0xa, 0xb, 0xe, 0xf] or
+                         (pkt.type == 1 and pkt.subtype == 0x5)),
         ),
         ConditionalField(
             _Dot11MacField("addr3", ETHER_ANY, 3),
@@ -729,7 +736,8 @@ class Dot11(Packet):
 
     def mysummary(self):
         # Supports both Dot11 and Dot11FCS
-        return self.sprintf("802.11 %%%s.type%% %%%s.subtype%% %%%s.addr2%% > %%%s.addr1%%" % ((self.__class__.__name__,) * 4))  # noqa: E501
+        return self.sprintf("802.11 %%%s.type%% %%%s.subtype%% %%%s.addr2%% > %%%s.addr1%%" % (
+                (self.__class__.__name__,) * 4))  # noqa: E501
 
     def guess_payload_class(self, payload):
         if self.type == 0x02 and (
@@ -852,6 +860,7 @@ class _Dot11EltUtils(Packet):
     """
     Contains utils for classes that have Dot11Elt as payloads
     """
+
     def network_stats(self):
         """Return a dictionary containing a summary of the Dot11
         elements fields
@@ -967,7 +976,8 @@ _dot11_info_elts_ids = {
     107: "Interworking",
     127: "Extendend Capabilities",
     191: "VHT Capabilities",
-    221: "Vendor Specific"
+    221: "Vendor Specific",
+    255: "HE Capabilities"
 }
 
 # Backward compatibility
@@ -1223,9 +1233,9 @@ class Dot11EltRSN(Dot11Elt):
             lambda pkt: (
                 True if pkt.len is None else
                 pkt.len - (
-                    12 +
-                    (pkt.nb_pairwise_cipher_suites or 0) * 4 +
-                    (pkt.nb_akm_suites or 0) * 4
+                        12 +
+                        (pkt.nb_pairwise_cipher_suites or 0) * 4 +
+                        (pkt.nb_akm_suites or 0) * 4
                 ) >= 2
             )
         ),
@@ -1235,11 +1245,11 @@ class Dot11EltRSN(Dot11Elt):
             lambda pkt: (
                 True if pkt.len is None else
                 pkt.len - (
-                    12 +
-                    (pkt.nb_pairwise_cipher_suites or 0) * 4 +
-                    (pkt.nb_akm_suites or 0) * 4 +
-                    (2 if pkt.pmkids else 0) +
-                    (pkt.pmkids and pkt.pmkids.nb_pmkids or 0) * 16
+                        12 +
+                        (pkt.nb_pairwise_cipher_suites or 0) * 4 +
+                        (pkt.nb_akm_suites or 0) * 4 +
+                        (2 if pkt.pmkids else 0) +
+                        (pkt.pmkids and pkt.pmkids.nb_pmkids or 0) * 16
                 ) >= 4
             )
         )
@@ -1270,7 +1280,7 @@ class Dot11EltCountry(Dot11Elt):
             [],
             Dot11EltCountryConstraintTriplet,
             length_from=lambda pkt: (
-                pkt.len - 3 - (pkt.len % 3)
+                    pkt.len - 3 - (pkt.len % 3)
             )
         ),
         ConditionalField(
@@ -1306,6 +1316,94 @@ class Dot11EltRates(Dot11Elt):
 
 
 Dot11EltRates.register_variant(50)  # Extended rates
+
+
+# Todo: implement the VHT and HE capability field parser
+class Dot11EltVHTCapabilities(Dot11Elt):
+    name = "802.11 VHT Capabilities"
+    match_subclass = True
+    fields_desc = [
+        ByteEnumField("ID", 191, _dot11_id_enum),
+        ByteField("len", None),
+        # VHT Capabilities Info: 4B
+        BitField("Extended_NSS_BW_Support", 0, 2, tot_size=-4),
+        BitField("TX_Antenna_Pattern_Consistency", 0, 1),
+        BitField("RX_Antenna_Pattern_Consistency", 0, 1),
+        BitField("Link_Adaptation", 0, 2),
+        BitEnumField("Max_A_MSDU", 0, 3,
+                     {0: "3895 o", 1: "7991 o", 2: "11454 o", 3: "reserved"}),
+        BitField("HTC_VHT_Support", 0, 1),
+        BitField("TXOP_PS", 0, 1),
+        BitField("MU_Beamformee_Capability", 0, 1),
+        BitField("MU_Beamformer_Capability", 0, 1),
+        BitField("Sounding_Dimensions", 0, 3),
+        BitField("Beamformee_STS_Capability", 0, 3),
+        BitField("SU_Beamformee_Capability", 0, 1),
+        BitField("SU_Beamformer_Capability", 0, 1),
+        BitField("RX_STBC", 0, 3),
+        BitField("TX_STBC", 0, 1),
+        BitField("ShortGI_160MHz_80_80MHz", 0, 1),
+        BitField("ShortGI_80MHz_TVHT_MODE_4C", 0, 1),
+        BitField("RX_LDPC", 0, 1),
+        BitField("Suppport_Channel_Width", 0, 2),
+        BitField("Maximum_MPDU_Length", 0, 2, end_tot_size=-4),
+        # Supported MCS Set: 8B
+        BitField("MCS_Reserved", 0, 2, tot_size=-8),
+        BitField("Extended_NSS_BW_Capability", 0, 1),
+        BitField("TX_Highest_LongGI_Rate", 0, 13),
+        BitField("TX_MCS_Map", 0, 16),
+        BitField("Max_NSTS_Total", 0, 3),
+        BitField("RX_Highest_LongGI_Rate", 0, 13),
+        BitField("RX_MCS_Map", 0, 16, end_tot_size=-8)
+    ]
+
+
+class Dot11EltHECapabilities(Dot11Elt):
+    name = "802.11 HE Capabilities"
+    match_subclass = True
+    fields_desc = [
+        ByteEnumField("ID", 255, _dot11_id_enum),
+        ByteField("len", None),
+        ByteField("Ext_Tag_Number", None),
+        # HE Capabilities Info: 6B
+        BitField("HT_VHT_Trigger_Frame_RX_Support", 0, 1, tot_size=-6),
+        BitField("Punctured_Sounding_Support", 0, 1),
+        BitField("HE_Dynamic_SM_PS", 0, 1),
+        BitField("OM_Ctrl_UL_MU_Data_Disable_RX_Support", 0, 1),
+        BitField("UL_2x996_RU_Support", 0, 1),
+        BitField("HE_Subchannel_Select_TX_Support", 0, 1),
+        BitField("MultiTID_Aggregation_TX_Support", 0, 3),
+        BitField("ASMDU_IN_AMPDU_Support", 0, 1),
+        BitField("OPS_Support", 0, 1),
+        BitField("NDP_Feedback_Report_Support", 0, 1),
+        BitField("SRP_Responder_Role", 0, 1),
+        BitField("BQR_Support", 0, 1),
+        BitField("QTP_Support", 0, 1),
+        BitField("BSRP_BQRP_AMPDU_Aggregation", 0, 1),
+        BitField("RX_Ctrl_to_MultiBSS", 0, 1),
+        BitField("Flexible_TWT_Schedule", 0, 1),
+        BitField("AMSDU_Fragmentation", 0, 1),
+        BitField("Max_AMPDU_Length_Exponent_Ext", 0, 2),
+        BitField("OFDMA_RA", 0, 1),
+        BitField("OM_Control", 0, 1),
+        BitField("Reserved", 0, 1),
+        BitField("Ack_Enabled_Aggregation", 0, 1),
+        BitField("MU_Cascading", 0, 1),
+        BitField("BA_Bitmap_32Bit", 0, 1),
+        BitField("Broadcast_TWT", 0, 1),
+        BitField("BSR_Support", 0, 1),
+        BitField("TRS_Support", 0, 1),
+        BitField("AllAck_Support", 0, 1),
+        BitField("HE_Link_Adaptation", 0, 2),
+        BitField("MultiTID_Aggregation_Support", 0, 3),
+        BitField("Trigger_Frame_MAC_Padding_Durtion", 0, 2),
+        BitField("Min_Fragment_Size", 0, 2),
+        BitField("Max_Num_Fragmented_MSDU", 0, 3),
+        BitField("Fragmentation_Support", 0, 2),
+        BitField("TWT_Responder_Support", 0, 1),
+        BitField("TWT_Requester_Suport", 0, 1),
+        BitField("HTC_HE_Support", 0, 1, end_tot_size=-6)
+    ]
 
 
 class Dot11EltHTCapabilities(Dot11Elt):
@@ -1445,6 +1543,111 @@ class Dot11Beacon(_Dot11EltUtils):
                    FlagsField("cap", 0, 16, capability_list)]
 
 
+class Dot11NDPA(_Dot11EltUtils):
+    name = "802.11 VHT/HE NDPA"
+    fields_desc = [
+        # Sounding Dialog Token: 1B
+        BitField("Sounding_Dialog_Token_Number", 0, 6, tot_size=-1),
+        BitField("HE", 0, 1),
+        BitField("SDT_Reserved", 0, 1, end_tot_size=-1),
+        # STA List: 2B
+        BitField("STA_List_Reserved", 0, 3, tot_size=-2),
+        BitField("Feedback_Type", 0, 1),
+        BitField("AID12", 0, 12, end_tot_size=-2)
+    ]
+
+
+ActionNoACK_Angle_Matrix = [
+    [2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # 2 x 1
+    [2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # 2 x 2
+    [2, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],  # 3 x 1
+    [2, 2, 1, 1, 2, 1, 0, 0, 0, 0, 0, 0],  # 3 x 2
+    [2, 2, 1, 1, 2, 1, 0, 0, 0, 0, 0, 0],  # 3 x 3
+    [2, 2, 2, 1, 1, 1, 0, 0, 0, 0, 0, 0],  # 4 x 1
+    [2, 2, 2, 1, 1, 1, 2, 2, 1, 1, 0, 0],  # 4 x 2
+    [2, 2, 2, 1, 1, 1, 2, 2, 1, 1, 2, 1],  # 4 x 3
+    [2, 2, 2, 1, 1, 1, 2, 2, 1, 1, 2, 1],  # 4 x 4
+]
+ActionNoACK_BW_Codebook = {
+    # BW Index, bandwidth literal
+    0x0: 20,
+    0x1: 40,
+    0x2: 80,
+    0x3: 160
+}
+ActionNoACK_NSubcarrier_Codebook = {
+    # Bandwidth, grouping, nsubc
+    20: {0: 52, 1: 30, 2: 16},
+    40: {0: 108, 1: 58, 2: 30},
+    80: {0: 234, 1: 122, 2: 62},
+    160: {0: 468, 2: 244, 1: 124},
+}
+ActionNoACK_phi_Codebook = {
+    # SU-MIMO
+    0: {0: 4, 1: 6},
+    # MU-MIMO
+    1: {0: 7, 1: 9},
+}
+ActionNoACK_psi_Codebook = {
+    # SU-MIMO
+    0: {0: 2, 1: 4},
+    # MU-MIMO
+    1: {0: 5, 1: 7},
+}
+angle_psi_val = 0x1
+angle_phi_val = 0x2
+
+
+def beamforming_feedback_matrix_size(Nc=1, Nr=1, bandwidth=0, grouping=0, fb_type=0, codebook=0):
+    """
+    Size of the reported beamforming feedback matrix in bytes (rounded up from bits)
+    :param Nc: Number of columns in the steering matrices (dissected Nc field), default as 1
+    :param Nr: Number of rows in the steering matrices (dissected Nr field), default as 1
+    :param bandwidth: Bandwidth of the RF frontend, default as 20
+    :param grouping: Grouping of the CSI measurement, default as 0 (no grouping)
+    :param fb_type: SU-MIMO or MU-MIMO, default as 0 (SU-MIMO)
+    :param codebook: Applied quantization codebook, default as 0
+    :return: size in bytes (rounded up from actual bit length)
+    """
+    angle_rp_idx = int(((3 + Nc) * (Nc - 1) / 2) + Nr)
+    phi_size = ActionNoACK_phi_Codebook[fb_type][codebook]
+    psi_size = ActionNoACK_psi_Codebook[fb_type][codebook]
+    phi_num = ActionNoACK_Angle_Matrix[angle_rp_idx].count(angle_phi_val)
+    psi_num = ActionNoACK_Angle_Matrix[angle_rp_idx].count(angle_psi_val)
+    nsubc = ActionNoACK_NSubcarrier_Codebook[bandwidth][grouping]
+    return int(math.ceil(nsubc * (phi_size * phi_num + psi_size * psi_num) / 8))
+
+
+class Dot11ActionNoACK(_Dot11EltUtils):
+    name = "802.11 Action No ACK"
+    fields_desc = [
+        XByteField("Category_Code", 0x0),
+        XByteField("VHT_Action", 0x0),
+        # MIMO Control Field: 3B
+        BitField("Sounding_Dialog_Token_Number", 0, 6, tot_size=-3),
+        BitField("Reserved", 0, 2),
+        BitField("First_Feedback_Segments", 0, 1),
+        BitField("Remaining_Feedback_Segments", 0, 3),
+        BitField("Feedback_Type", 0, 1),
+        BitField("Codebook", 0, 1),
+        BitField("Grouping", 0, 2),
+        BitField("Channel_Bandwidth", 0, 2),
+        BitField("Nr", 0, 3),
+        BitField("Nc", 0, 3, end_tot_size=-3),
+        # Compressed Beamforming Report
+        # ASNRs (Nc)
+        FieldListField("ASNR_Hex", [], XByteField("", 0x0),
+                       count_from=lambda pkt: pkt.Nc + 1),
+        # PHI/PSI angles decode
+        StrLenField("CBRF_Mat_Hex", b"",
+                    length_from=lambda pkt: beamforming_feedback_matrix_size(pkt.Nc, pkt.Nr,
+                                                                             ActionNoACK_BW_Codebook[
+                                                                                 pkt.Channel_Bandwidth],
+                                                                             pkt.Grouping, pkt.Feedback_Type,
+                                                                             pkt.Codebook))
+    ]
+
+
 class Dot11ATIM(Packet):
     name = "802.11 ATIM"
 
@@ -1508,6 +1711,11 @@ class Dot11Deauth(Packet):
 
 class Dot11Ack(Packet):
     name = "802.11 Ack packet"
+
+
+###################
+# VHT/HE TXBF
+###################
 
 
 ###################
@@ -1593,6 +1801,7 @@ class Dot11WEP(Dot11Encrypted):
             p = self.encrypt(p, raw(pay))
         return p
 
+
 # we can't dissect ICV / MIC here: they are encrypted
 
 # 802.11-2016 12.5.2.2
@@ -1607,7 +1816,7 @@ class Dot11TKIP(Dot11Encrypted):
         ByteField("TSC0", 0),
         BitField("key_id", 0, 2),  #
         BitField("ext_iv", 0, 1),  # => LE = reversed order
-        BitField("res", 0, 5),     #
+        BitField("res", 0, 5),  #
         # ext_iv - 4 bytes
         ConditionalField(ByteField("TSC2", 0), lambda pkt: pkt.ext_iv),
         ConditionalField(ByteField("TSC3", 0), lambda pkt: pkt.ext_iv),
@@ -1616,6 +1825,7 @@ class Dot11TKIP(Dot11Encrypted):
         # data
         StrField("data", None),
     ]
+
 
 # 802.11-2016 12.5.3.2
 
@@ -1629,7 +1839,7 @@ class Dot11CCMP(Dot11Encrypted):
         ByteField("res0", 0),
         BitField("key_id", 0, 2),  #
         BitField("ext_iv", 0, 1),  # => LE = reversed order
-        BitField("res1", 0, 5),    #
+        BitField("res1", 0, 5),  #
         ByteField("PN2", 0),
         ByteField("PN3", 0),
         ByteField("PN4", 0),
@@ -1647,9 +1857,9 @@ class Dot11CCMP(Dot11Encrypted):
 bind_top_down(RadioTap, Dot11FCS, present=2, Flags=16)
 bind_top_down(Dot11, Dot11QoS, type=2, subtype=0xc)
 
-bind_layers(PrismHeader, Dot11,)
+bind_layers(PrismHeader, Dot11, )
 bind_layers(Dot11, LLC, type=2)
-bind_layers(Dot11QoS, LLC,)
+bind_layers(Dot11QoS, LLC, )
 bind_layers(Dot11, Dot11AssoReq, subtype=0, type=0)
 bind_layers(Dot11, Dot11AssoResp, subtype=1, type=0)
 bind_layers(Dot11, Dot11ReassoReq, subtype=2, type=0)
@@ -1662,18 +1872,21 @@ bind_layers(Dot11, Dot11Disas, subtype=10, type=0)
 bind_layers(Dot11, Dot11Auth, subtype=11, type=0)
 bind_layers(Dot11, Dot11Deauth, subtype=12, type=0)
 bind_layers(Dot11, Dot11Ack, subtype=13, type=1)
-bind_layers(Dot11Beacon, Dot11Elt,)
-bind_layers(Dot11AssoReq, Dot11Elt,)
-bind_layers(Dot11AssoResp, Dot11Elt,)
-bind_layers(Dot11ReassoReq, Dot11Elt,)
-bind_layers(Dot11ReassoResp, Dot11Elt,)
-bind_layers(Dot11ProbeReq, Dot11Elt,)
-bind_layers(Dot11ProbeResp, Dot11Elt,)
-bind_layers(Dot11Auth, Dot11Elt,)
-bind_layers(Dot11Elt, Dot11Elt,)
+bind_layers(Dot11, Dot11NDPA, subtype=5, type=1)
+bind_layers(Dot11, Dot11ActionNoACK, subtype=14, type=0)
+bind_layers(Dot11Beacon, Dot11Elt, )
+bind_layers(Dot11AssoReq, Dot11Elt, )
+bind_layers(Dot11AssoResp, Dot11Elt, )
+bind_layers(Dot11ReassoReq, Dot11Elt, )
+bind_layers(Dot11ReassoResp, Dot11Elt, )
+bind_layers(Dot11ProbeReq, Dot11Elt, )
+bind_layers(Dot11ProbeResp, Dot11Elt, )
+bind_layers(Dot11Auth, Dot11Elt, )
+bind_layers(Dot11Elt, Dot11Elt, )
 bind_layers(Dot11TKIP, conf.raw_layer)
 bind_layers(Dot11CCMP, conf.raw_layer)
-
+bind_layers(Dot11NDPA, Dot11Elt, )
+bind_layers(Dot11ActionNoACK, Dot11Elt, )
 
 conf.l2types.register(DLT_IEEE802_11, Dot11)
 conf.l2types.register_num2layer(801, Dot11)
@@ -1681,6 +1894,7 @@ conf.l2types.register(DLT_PRISM_HEADER, PrismHeader)
 conf.l2types.register_num2layer(802, PrismHeader)
 conf.l2types.register(DLT_IEEE802_11_RADIO, RadioTap)
 conf.l2types.register_num2layer(803, RadioTap)
+
 
 ####################
 # Other WiFi utils #

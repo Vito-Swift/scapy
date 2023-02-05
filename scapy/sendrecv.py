@@ -728,6 +728,7 @@ def __sr_loop(srfunc,  # type: Callable[..., Tuple[SndRcvList, PacketList]]
     n = 0
     r = 0
     ct = conf.color_theme
+
     if verbose is None:
         verbose = conf.verb
     parity = 0
